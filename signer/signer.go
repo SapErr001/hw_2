@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"sort"
 	"strconv"
 	"strings"
@@ -29,25 +29,71 @@ func ExecutePipeline (freeFlowJobs... job) {
 	wg.Wait()
 }
 
+func wrapperCrc32(data string,	 res * string, wg * sync.WaitGroup)  {
+	defer wg.Done()
+	*res = DataSignerCrc32(data)
+}
+var mu sync.Mutex
+
+func wrapperMd5(finish *context.CancelFunc, data string, res * string, wg * sync.WaitGroup)  {
+	defer wg.Done()
+	defer (*finish)()
+	mu.Lock()
+	*res = DataSignerMd5(data)
+	mu.Unlock()
+}
+
+func singleHashOneThread(data string, out chan interface{}, wgoOuter * sync.WaitGroup)  {
+	defer wgoOuter.Done()
+	wg := &sync.WaitGroup{}
+	wg.Add(3)
+	ctx, finish := context.WithCancel(context.Background())
+
+	var step0 string
+	go wrapperMd5(&finish, data, &step0, wg)
+
+	var step1 string
+	go wrapperCrc32(data , &step1, wg)
+
+	<-ctx.Done()
+	var step3 string
+	go wrapperCrc32(step0, &step3, wg)
+
+	wg.Wait()
+	res := step1 + "~" + step3
+	//fmt.Println("SingleHash result ", res)
+	out <- res
+}
+
 func SingleHash(in, out chan interface{}) {
+	wg := &sync.WaitGroup{}
 	for data := range in {
-		//step1 :=  DataSignerCrc32(strconv.Itoa(data.(int)))
-		res := DataSignerCrc32(strconv.Itoa(data.(int))) + "~" +
-			DataSignerCrc32(DataSignerMd5(strconv.Itoa(data.(int))))
-		fmt.Println("SingleHash result ", res)
-		out <- res
+		wg.Add(1)
+		go singleHashOneThread(strconv.Itoa(data.(int)), out, wg)
 	}
+	wg.Wait()
+}
+
+func multiHashOneThread(data string, out chan interface{}, wgoOuter * sync.WaitGroup) {
+	defer wgoOuter.Done()
+	result := make([]string, 6)
+	wg := &sync.WaitGroup{}
+	wg.Add(6)
+	for i := 0; i < 6; i++ {
+		go wrapperCrc32(strconv.Itoa(i) + data, &result[i], wg)
+	}
+	wg.Wait()
+	//fmt.Println("MultiHash", result)
+	out <- strings.Join(result, "")
 }
 
 func MultiHash(in, out chan interface{}) {
+	wg := &sync.WaitGroup{}
 	for data := range in {
-		var result string
-		for i := 0; i < 6; i++ {
-			result += DataSignerCrc32(strconv.Itoa(i) + data.(string))
-		}
-		fmt.Println("MultiHash", result)
-		out <- result
+		wg.Add(1)
+		go multiHashOneThread(data.(string), out, wg)
 	}
+	wg.Wait()
 }
 
 func CombineResults(in, out chan interface{}) {
