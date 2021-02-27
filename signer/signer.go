@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"sort"
 	"strconv"
 	"strings"
@@ -9,6 +8,7 @@ import (
 )
 
 var globIn, globOut chan interface{}
+var muMd5 sync.Mutex
 
 func newJob(job job, in chan interface{}, out chan interface{}, wg *sync.WaitGroup) {
 	defer wg.Done()
@@ -33,35 +33,33 @@ func wrapperCrc32(data string,	 res * string, wg * sync.WaitGroup)  {
 	defer wg.Done()
 	*res = DataSignerCrc32(data)
 }
-var mu sync.Mutex
 
-func wrapperMd5(finish *context.CancelFunc, data string, res * string, wg * sync.WaitGroup)  {
+func wrapperMd5(finish chan interface{}, data string, res * string, wg * sync.WaitGroup)  {
 	defer wg.Done()
-	defer (*finish)()
-	mu.Lock()
+	defer func() { finish <- 1 }()
+	muMd5.Lock()
 	*res = DataSignerMd5(data)
-	mu.Unlock()
+	muMd5.Unlock()
 }
 
 func singleHashOneThread(data string, out chan interface{}, wgoOuter * sync.WaitGroup)  {
 	defer wgoOuter.Done()
 	wg := &sync.WaitGroup{}
 	wg.Add(3)
-	ctx, finish := context.WithCancel(context.Background())
+	end := make(chan interface{})
 
 	var step0 string
-	go wrapperMd5(&finish, data, &step0, wg)
+	go wrapperMd5(end, data, &step0, wg)
 
 	var step1 string
 	go wrapperCrc32(data , &step1, wg)
 
-	<-ctx.Done()
+	<-end
 	var step3 string
 	go wrapperCrc32(step0, &step3, wg)
 
 	wg.Wait()
 	res := step1 + "~" + step3
-	//fmt.Println("SingleHash result ", res)
 	out <- res
 }
 
@@ -83,7 +81,6 @@ func multiHashOneThread(data string, out chan interface{}, wgoOuter * sync.WaitG
 		go wrapperCrc32(strconv.Itoa(i) + data, &result[i], wg)
 	}
 	wg.Wait()
-	//fmt.Println("MultiHash", result)
 	out <- strings.Join(result, "")
 }
 
