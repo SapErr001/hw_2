@@ -13,10 +13,10 @@ var muMd5 sync.Mutex
 func newJob(job job, in chan interface{}, out chan interface{}, wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer close(out)
-	job(in , out)
+	job(in, out)
 }
 
-func ExecutePipeline (freeFlowJobs... job) {
+func ExecutePipeline(freeFlowJobs ...job) {
 	globIn = make(chan interface{})
 	wg := &sync.WaitGroup{}
 	for _, curJob := range freeFlowJobs {
@@ -29,12 +29,12 @@ func ExecutePipeline (freeFlowJobs... job) {
 	wg.Wait()
 }
 
-func wrapperCrc32(data string,	 res * string, wg * sync.WaitGroup)  {
+func wrapperCrc32(data string, res *string, wg *sync.WaitGroup) {
 	defer wg.Done()
 	*res = DataSignerCrc32(data)
 }
 
-func wrapperMd5(finish chan interface{}, data string, res * string, wg * sync.WaitGroup)  {
+func wrapperMd5(finish chan interface{}, data string, res *string, wg *sync.WaitGroup) {
 	defer wg.Done()
 	defer func() { finish <- 1 }()
 	muMd5.Lock()
@@ -42,7 +42,7 @@ func wrapperMd5(finish chan interface{}, data string, res * string, wg * sync.Wa
 	muMd5.Unlock()
 }
 
-func singleHashOneThread(data string, out chan interface{}, wgoOuter * sync.WaitGroup)  {
+func singleHashOneThread(data string, out chan interface{}, wgoOuter *sync.WaitGroup) {
 	defer wgoOuter.Done()
 	wg := &sync.WaitGroup{}
 	wg.Add(3)
@@ -52,7 +52,7 @@ func singleHashOneThread(data string, out chan interface{}, wgoOuter * sync.Wait
 	go wrapperMd5(end, data, &step0, wg)
 
 	var step1 string
-	go wrapperCrc32(data , &step1, wg)
+	go wrapperCrc32(data, &step1, wg)
 
 	<-end
 	var step3 string
@@ -72,13 +72,13 @@ func SingleHash(in, out chan interface{}) {
 	wg.Wait()
 }
 
-func multiHashOneThread(data string, out chan interface{}, wgoOuter * sync.WaitGroup) {
+func multiHashOneThread(data string, out chan interface{}, wgoOuter *sync.WaitGroup) {
 	defer wgoOuter.Done()
 	result := make([]string, 6)
 	wg := &sync.WaitGroup{}
 	wg.Add(6)
 	for i := 0; i < 6; i++ {
-		go wrapperCrc32(strconv.Itoa(i) + data, &result[i], wg)
+		go wrapperCrc32(strconv.Itoa(i)+data, &result[i], wg)
 	}
 	wg.Wait()
 	out <- strings.Join(result, "")
@@ -101,5 +101,3 @@ func CombineResults(in, out chan interface{}) {
 	sort.Strings(result)
 	out <- strings.Join(result, "_")
 }
-
-
