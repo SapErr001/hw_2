@@ -59,7 +59,7 @@ func singleHashOneThread(data string, out chan interface{}, wgoOuter *sync.WaitG
 	go wrapperCrc32(step0, &step3, wg)
 
 	wg.Wait()
-	res := step1 + "~" + step3
+	res := step1 + "-" + step3
 	out <- res
 }
 
